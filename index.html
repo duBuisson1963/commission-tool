@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Commission Simulator v1.15</title>
+    <title>Commission Simulator v1.16</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 20px; }
@@ -52,11 +52,10 @@
         .report-block p { font-size: 14px; color: #333; line-height: 1.6; margin: 8px 0; }
         .report-formula { background: #f8f9fa; padding: 8px 12px; border-left: 3px solid #2980b9; font-family: monospace; font-size: 13px; margin-bottom: 10px; display: inline-block; }
 
-        .sap-item { display: flex; align-items: center; gap: 15px; background: #fff8e1; padding: 10px 15px; border-radius: 4px; border-left: 4px solid #f39c12; }
+        .sap-item { display: flex; align-items: center; gap: 15px; background: #fff8e1; padding: 10px 15px; border-radius: 4px; border-left: 4px solid #f39c12; margin-bottom: 10px; }
         .sap-item input { padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 150px; font-size: 16px; }
         .sap-item button { background: #e74c3c; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; }
 
-        /* New Elements Styles */
         .info-bar { background-color: #e0e6ed; padding: 12px 20px; border-radius: 6px; margin-bottom: 15px; font-size: 16px; color: #2c3e50; display: flex; justify-content: space-around; font-weight: 500; border: 1px solid #cdd4db; }
         .readonly-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
         .readonly-table th, .readonly-table td { padding: 10px; border-bottom: 1px solid #ddd; text-align: left; }
@@ -66,14 +65,11 @@
         
         .print-section { margin-bottom: 40px; }
 
-        /* Print Pagination Constraints */
         @media print {
             @page { size: auto; margin: 15mm; }
             body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background-color: #f4f7f6 !important; }
             .no-print { display: none !important; }
             .container { box-shadow: none !important; margin: 0; padding: 0; }
-            
-            /* Prevent awkward page breaks */
             .print-section { page-break-inside: avoid; break-inside: avoid; margin-bottom: 20px; }
             .setup-section { page-break-inside: avoid; break-inside: avoid; }
             .results { page-break-inside: avoid; break-inside: avoid; }
@@ -90,7 +86,7 @@
 
 <div class="container">
     <div class="header-wrap">
-        <h1>Performance & Commission Simulator <span class="version-badge">v1.15</span></h1>
+        <h1>Performance & Commission Simulator <span class="version-badge">v1.16</span></h1>
         <button class="print-btn no-print" onclick="window.print()">🖨️ Print / Save PDF</button>
     </div>
 
@@ -326,12 +322,13 @@
         const p = document.getElementById('empNumber').value.trim() || 'PersNo';
         const m = document.getElementById('stmtMonth').value.trim() || 'Month';
         const y = document.getElementById('stmtYear').value.trim() || 'Year';
-        document.title = `${n}_${p}_${m}_${y}`;
+        document.title = n + '_' + p + '_' + m + '_' + y;
     }
 
-    ['empName', 'empNumber', 'stmtMonth', 'stmtYear'].forEach(id => {
-        document.getElementById(id).addEventListener('input', updateFileName);
-    });
+    document.getElementById('empName').addEventListener('input', updateFileName);
+    document.getElementById('empNumber').addEventListener('input', updateFileName);
+    document.getElementById('stmtMonth').addEventListener('input', updateFileName);
+    document.getElementById('stmtYear').addEventListener('input', updateFileName);
 
     function getMultiplier(percentage) {
         if (percentage < 100) return 0;
@@ -354,51 +351,57 @@
 
         try {
             const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
             let fullText = "";
 
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
-                const pageText = textContent.items.map(item => item.str).join(" ");
-                fullText += pageText + " ";
+                fullText += textContent.items.map(item => item.str).join(" ") + "\n";
             }
 
-            const nameMatch = fullText.match(/Personnel Number:\s*\d+\s*[-]\s*(.*?)\s*Position:/i);
+            const details = {};
+            
+            // USER PROVIDED PDF EXTRACTION LOGIC
+            const nameMatch = fullText.match(/Personnel Number:\s*(\d+)\s*[-]\s*(.*?)\s*Position:/i);
             if (nameMatch) {
-                document.getElementById('empName').value = nameMatch[1].trim();
+                details.personnelNumber = nameMatch[1].trim();
+                details.fullName = nameMatch[2].trim();
             }
 
-            const currentNameStr = document.getElementById('empName').value.toLowerCase();
+            const targetMatch = fullText.match(/Target Commission:\s*([\d,]+\.\d{2})/i);
+            if (targetMatch) {
+                details.targetCommission = parseFloat(targetMatch[1].replace(/,/g, ''));
+            }
+
+            const monthMatch = fullText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})/i);
+            if (monthMatch) {
+                details.month = monthMatch[1];
+                details.year = monthMatch[2];
+            }
+
+            // Apply Details to UI
+            if(details.fullName) document.getElementById('empName').value = details.fullName;
+            if(details.personnelNumber) document.getElementById('empNumber').value = details.personnelNumber;
+            if(details.targetCommission) document.getElementById('targetCommission').value = details.targetCommission;
+            if(details.month) document.getElementById('stmtMonth').value = details.month;
+            if(details.year) document.getElementById('stmtYear').value = details.year;
+
+            const currentNameStr = (details.fullName || "").toLowerCase();
             if (currentNameStr.includes("basil")) {
                 roleSelect.value = "SMMEGovt";
             } else if (currentNameStr.includes("werner")) {
                 roleSelect.value = "Sport";
             }
 
-            const targetCommMatch = fullText.match(/Target Commission:\s*([\d,]+\.\d{2})\s*ZAR/i);
-            if (targetCommMatch) {
-                document.getElementById('targetCommission').value = parseFloat(targetCommMatch[1].replace(/,/g, ''));
-            }
-
-            const dateMatch = fullText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})/i);
-            if (dateMatch) {
-                document.getElementById('stmtMonth').value = dateMatch[1];
-                document.getElementById('stmtYear').value = dateMatch[2];
-            }
-
-            const persMatch = fullText.match(/\b(00\d{6}|\d{6})\b/);
-            if (persMatch) {
-                document.getElementById('empNumber').value = persMatch[1];
-            }
-
             updateFileName();
             renderTable();
 
+            // Extract Stream Numbers
             const rows = document.querySelectorAll('.stream-row');
             rows.forEach(row => {
                 const streamName = row.querySelector('strong').innerText;
-                const streamRegex = new RegExp(`${streamName}[^0-9]*([0-9,]+\\.\\d{2})[^0-9]*([0-9,]+\\.\\d{2})`, 'i');
+                const streamRegex = new RegExp(streamName + "[^0-9]*([0-9,]+\\.\\d{2})[^0-9]*([0-9,]+\\.\\d{2})", 'i');
                 const streamMatch = fullText.match(streamRegex);
                 
                 if(streamMatch) {
@@ -423,14 +426,18 @@
     function updateSapDropdown() {
         const streams = Object.keys(roleWeights[roleSelect.value]);
         const sel = document.getElementById('sapStreamSelect');
-        sel.innerHTML = streams.map(s => `<option value="${s}">${s}</option>`).join('');
+        if(sel) {
+            sel.innerHTML = streams.map(s => '<option value="' + s + '">' + s + '</option>').join('');
+        }
     }
 
-    document.getElementById('addSapBtn').addEventListener('click', () => {
+    document.getElementById('addSapBtn').addEventListener('click', function() {
         const stream = document.getElementById('sapStreamSelect').value;
         const metric = document.getElementById('sapMetricSelect').value;
         
-        if(!sapOverrides[stream]) sapOverrides[stream] = {};
+        if(!sapOverrides[stream]) {
+            sapOverrides[stream] = {};
+        }
         if(sapOverrides[stream][metric] !== undefined) return; 
         
         sapOverrides[stream][metric] = 0;
@@ -444,7 +451,9 @@
 
     window.removeSapOverride = function(stream, metric) {
         delete sapOverrides[stream][metric];
-        if(Object.keys(sapOverrides[stream]).length === 0) delete sapOverrides[stream];
+        if(Object.keys(sapOverrides[stream]).length === 0) {
+            delete sapOverrides[stream];
+        }
         renderSapOverrides();
     }
 
@@ -478,7 +487,6 @@
         const midCommAnnual = scaleMidpoints[scaleCode];
         const midComm = midCommAnnual / 12;
 
-        // Update Info Bars
         document.getElementById('midInfoScale').innerText = scaleCode;
         document.getElementById('midInfoComm').innerText = formatCurrency(midComm);
         document.getElementById('sapInfoScale').innerText = scaleCode;
@@ -493,9 +501,8 @@
         let reportStrDetails = ""; 
         const hasSAP = Object.keys(sapOverrides).length > 0;
 
-        // Table HTML builders for Read-Only displays
-        let midTableHTML = `<table class="readonly-table"><thead><tr><th>Stream</th><th>Weighting</th><th>Target</th><th>Actual</th><th>% Achieved</th><th>Status</th></tr></thead><tbody>`;
-        let sapTableHTML = `<table class="readonly-table"><thead><tr><th>Stream</th><th>Weighting</th><th>Target</th><th>Actual</th><th>% Achieved</th><th>Status</th></tr></thead><tbody>`;
+        let midTableHTML = '<table class="readonly-table"><thead><tr><th>Stream</th><th>Weighting</th><th>Target</th><th>Actual</th><th>% Achieved</th><th>Status</th></tr></thead><tbody>';
+        let sapTableHTML = '<table class="readonly-table"><thead><tr><th>Stream</th><th>Weighting</th><th>Target</th><th>Actual</th><th>% Achieved</th><th>Status</th></tr></thead><tbody>';
 
         const rows = document.querySelectorAll('.stream-row');
         
@@ -505,8 +512,13 @@
             const stdTarget = parseFloat(row.querySelector('.target-input').value) || 0;
             const stdActual = parseFloat(row.querySelector('.actual-input').value) || 0;
             
-            const sapTarget = sapOverrides[streamName]?.target !== undefined ? sapOverrides[streamName].target : stdTarget;
-            const sapActual = sapOverrides[streamName]?.actual !== undefined ? sapOverrides[streamName].actual : stdActual;
+            let sapTarget = stdTarget;
+            let sapActual = stdActual;
+            
+            if (sapOverrides[streamName]) {
+                if (sapOverrides[streamName].target !== undefined) sapTarget = sapOverrides[streamName].target;
+                if (sapOverrides[streamName].actual !== undefined) sapActual = sapOverrides[streamName].actual;
+            }
 
             let stdPct = 0, sapPct = 0;
             let stdAchieved = false, sapAchieved = false;
@@ -535,33 +547,31 @@
                 }
             }
 
-            // Append to Read-Only Tables
             if (stdTarget > 0 || stdActual > 0) {
-                midTableHTML += `<tr>
-                    <td><strong>${streamName}</strong></td>
-                    <td>${(weight * 100).toFixed(1)}%</td>
-                    <td>${formatCurrency(stdTarget)}</td>
-                    <td>${formatCurrency(stdActual)}</td>
-                    <td>${stdTarget > 0 ? stdPct.toFixed(2) + '%' : '0.00%'}</td>
-                    <td><span class="badge ${stdAchieved ? 'success' : 'fail'}">${stdAchieved ? 'Achieved' : 'Missed'}</span></td>
-                </tr>`;
+                midTableHTML += '<tr>' +
+                    '<td><strong>' + streamName + '</strong></td>' +
+                    '<td>' + (weight * 100).toFixed(1) + '%</td>' +
+                    '<td>' + formatCurrency(stdTarget) + '</td>' +
+                    '<td>' + formatCurrency(stdActual) + '</td>' +
+                    '<td>' + (stdTarget > 0 ? stdPct.toFixed(2) + '%' : '0.00%') + '</td>' +
+                    '<td><span class="badge ' + (stdAchieved ? 'success' : 'fail') + '">' + (stdAchieved ? 'Achieved' : 'Missed') + '</span></td>' +
+                '</tr>';
             }
 
             if (sapTarget > 0 || sapActual > 0) {
-                let sTHTML = (sapTarget !== stdTarget) ? `<span class="highlight-change">${formatCurrency(sapTarget)}</span>` : formatCurrency(sapTarget);
-                let sAHTML = (sapActual !== stdActual) ? `<span class="highlight-change">${formatCurrency(sapActual)}</span>` : formatCurrency(sapActual);
+                let sTHTML = (sapTarget !== stdTarget) ? '<span class="highlight-change">' + formatCurrency(sapTarget) + '</span>' : formatCurrency(sapTarget);
+                let sAHTML = (sapActual !== stdActual) ? '<span class="highlight-change">' + formatCurrency(sapActual) + '</span>' : formatCurrency(sapActual);
                 
-                sapTableHTML += `<tr>
-                    <td><strong>${streamName}</strong></td>
-                    <td>${(weight * 100).toFixed(1)}%</td>
-                    <td>${sTHTML}</td>
-                    <td>${sAHTML}</td>
-                    <td>${sapTarget > 0 ? sapPct.toFixed(2) + '%' : '0.00%'}</td>
-                    <td><span class="badge ${sapAchieved ? 'success' : 'fail'}">${sapAchieved ? 'Achieved' : 'Missed'}</span></td>
-                </tr>`;
+                sapTableHTML += '<tr>' +
+                    '<td><strong>' + streamName + '</strong></td>' +
+                    '<td>' + (weight * 100).toFixed(1) + '%</td>' +
+                    '<td>' + sTHTML + '</td>' +
+                    '<td>' + sAHTML + '</td>' +
+                    '<td>' + (sapTarget > 0 ? sapPct.toFixed(2) + '%' : '0.00%') + '</td>' +
+                    '<td><span class="badge ' + (sapAchieved ? 'success' : 'fail') + '">' + (sapAchieved ? 'Achieved' : 'Missed') + '</span></td>' +
+                '</tr>';
             }
 
-            // UI Updates for the main row 
             row.querySelector('.percent-cell').innerText = stdTarget > 0 ? stdPct.toFixed(2) + '%' : '0.00%';
             const statusBadge = row.querySelector('.badge');
             if(stdAchieved) {
@@ -573,21 +583,20 @@
             }
 
             if (stdTarget > 0 || sapTarget > 0) {
-                reportStrDetails += `<li><strong>${streamName} (${(weight * 100).toFixed(1)}% Weight):</strong><br>`;
-                reportStrDetails += `<em>Statement:</em> Actual R ${formatCurrency(stdActual)} ÷ Target R ${formatCurrency(stdTarget)} = <strong>${stdPct.toFixed(2)}% Achieved</strong> (${stdAchieved ? 'Met' : 'Missed'})<br>`;
+                reportStrDetails += '<li><strong>' + streamName + ' (' + (weight * 100).toFixed(1) + '% Weight):</strong><br>';
+                reportStrDetails += '<em>Statement:</em> Actual R ' + formatCurrency(stdActual) + ' &divide; Target R ' + formatCurrency(stdTarget) + ' = <strong>' + stdPct.toFixed(2) + '% Achieved</strong> (' + (stdAchieved ? 'Met' : 'Missed') + ')<br>';
                 if(hasSAP) {
-                    reportStrDetails += `<em>SAP Data:</em> Actual R ${formatCurrency(sapActual)} ÷ Target R ${formatCurrency(sapTarget)} = <strong>${sapPct.toFixed(2)}% Achieved</strong> (${sapAchieved ? 'Met' : 'Missed'})<br>`;
+                    reportStrDetails += '<em>SAP Data:</em> Actual R ' + formatCurrency(sapActual) + ' &divide; Target R ' + formatCurrency(sapTarget) + ' = <strong>' + sapPct.toFixed(2) + '% Achieved</strong> (' + (sapAchieved ? 'Met' : 'Missed') + ')<br>';
                 }
-                reportStrDetails += `<em>- Midpoint Segment Value:</em> R ${formatCurrency(midComm)} × ${(weight * 100).toFixed(1)}% = R ${formatCurrency(midComm * weight)}</li><hr style="border:0; border-bottom: 1px dashed #eee; margin: 10px 0;">`;
+                reportStrDetails += '<em>- Midpoint Segment Value:</em> R ' + formatCurrency(midComm) + ' &times; ' + (weight * 100).toFixed(1) + '% = R ' + formatCurrency(midComm * weight) + '</li><hr style="border:0; border-bottom: 1px dashed #eee; margin: 10px 0;">';
             }
         });
 
-        midTableHTML += `</tbody></table>`;
-        sapTableHTML += `</tbody></table>`;
+        midTableHTML += '</tbody></table>';
+        sapTableHTML += '</tbody></table>';
         document.getElementById('midpointTableContainer').innerHTML = midTableHTML;
         document.getElementById('sapTableContainer').innerHTML = sapTableHTML;
 
-        // Yields & Multipliers
         const stdYield = stdTotalTarget > 0 ? (stdTotalActual / stdTotalTarget) * 100 : 0;
         const stdPerfectBonus = (stdSegmentsCount > 0 && stdSegmentsCount === stdAchievedCount) ? 0.05 : 0;
         const stdBaseMult = getMultiplier(stdYield);
@@ -597,19 +606,20 @@
         let sapSegmentsCount = 0;
         document.querySelectorAll('.stream-row').forEach(row => {
             const sName = row.querySelector('strong').innerText;
-            const sTarget = sapOverrides[sName]?.target !== undefined ? sapOverrides[sName].target : parseFloat(row.querySelector('.target-input').value) || 0;
+            let sTarget = parseFloat(row.querySelector('.target-input').value) || 0;
+            if (sapOverrides[sName] && sapOverrides[sName].target !== undefined) {
+                sTarget = sapOverrides[sName].target;
+            }
             if(sTarget > 0) sapSegmentsCount++;
         });
         const sapPerfectBonus = (sapSegmentsCount > 0 && sapSegmentsCount === sapAchievedCount) ? 0.05 : 0;
         const sapBaseMult = getMultiplier(sapYield);
         const sapFinalMult = sapYield >= 100 ? sapBaseMult + sapPerfectBonus : 0;
 
-        // Final Commissions
         let finalCalc1 = stdYield >= 100 ? (baseComm * stdFinalMult) : stdSegmentSum;
         let finalCalc2 = stdYield >= 100 ? (midComm * stdFinalMult) : midSegmentSum;
         let finalCalc3 = sapYield >= 100 ? (midComm * sapFinalMult) : sapSegmentSum;
 
-        // Block 1 Update
         document.getElementById('resTotalTarget').innerText = formatCurrency(stdTotalTarget);
         document.getElementById('resTotalActual').innerText = formatCurrency(stdTotalActual);
         document.getElementById('resOverallYield').innerText = stdYield.toFixed(2);
@@ -619,7 +629,6 @@
         document.getElementById('resFinalComm').innerText = formatCurrency(finalCalc1);
         document.getElementById('calcLogicText').innerText = stdYield >= 100 ? "Overall target met! Target Commission × Multiple applied." : "Target not met. Segment Commission only.";
 
-        // Block 2 Update
         document.getElementById('resMidTotalTarget').innerText = formatCurrency(stdTotalTarget);
         document.getElementById('resMidTotalActual').innerText = formatCurrency(stdTotalActual);
         document.getElementById('resMidOverallYield').innerText = stdYield.toFixed(2);
@@ -629,7 +638,6 @@
         document.getElementById('resMidFinalComm').innerText = formatCurrency(finalCalc2);
         document.getElementById('calcMidLogicText').innerText = stdYield >= 100 ? "Overall target met! Midpoint Commission × Multiple applied." : "Target not met. Midpoint Segment Commission only.";
 
-        // Block 3 (SAP) Update
         document.getElementById('resSapTotalTarget').innerText = formatCurrency(sapTotalTarget);
         document.getElementById('resSapTotalActual').innerText = formatCurrency(sapTotalActual);
         document.getElementById('resSapOverallYield').innerText = sapYield.toFixed(2);
@@ -639,7 +647,6 @@
         document.getElementById('resSapFinalComm').innerText = formatCurrency(finalCalc3);
         document.getElementById('calcSapLogicText').innerText = sapYield >= 100 ? "Overall SAP target met! Midpoint Commission × SAP Multiple applied." : "SAP Target not met. Midpoint Segment Commission only.";
 
-        // Differences
         const trueCommission = hasSAP ? finalCalc3 : finalCalc2;
         const diff = trueCommission - finalCalc1;
         
@@ -647,56 +654,53 @@
         diffEls.forEach(el => {
             el.style.display = "inline-block";
             if (diff > 0) {
-                el.innerText = `Short Paid: R${formatCurrency(diff)}`;
+                el.innerText = 'Short Paid: R' + formatCurrency(diff);
                 el.style.color = "#fff"; el.style.backgroundColor = "#e74c3c";
             } else if (diff < 0) {
-                el.innerText = `Over Paid: R${formatCurrency(Math.abs(diff))}`;
+                el.innerText = 'Over Paid: R' + formatCurrency(Math.abs(diff));
                 el.style.color = "#fff"; el.style.backgroundColor = "#27ae60";
             } else {
-                el.innerText = `Difference: R0.00`;
+                el.innerText = 'Difference: R0.00';
                 el.style.color = "#fff"; el.style.backgroundColor = "#95a5a6";
             }
         });
 
         if(hasSAP) document.getElementById('resDiffText').style.display = "none";
 
-        // Detailed Report
-        let rHTML = `<h3>📝 Detailed Calculation Report</h3>`;
+        let rHTML = '<h3>📝 Detailed Calculation Report</h3>';
         
-        rHTML += `<h4>Step 1: Calculate Overall Yield</h4>
-                  <p>The system sums all active targets and actuals to determine the overall yield percentage.</p>
-                  <div class="report-formula">Statement Yield = Total Actual (R ${formatCurrency(stdTotalActual)}) ÷ Total Target (R ${formatCurrency(stdTotalTarget)}) = <strong>${stdYield.toFixed(2)}%</strong></div>`;
+        rHTML += '<h4>Step 1: Calculate Overall Yield</h4>' +
+                 '<p>The system sums all active targets and actuals to determine the overall yield percentage.</p>' +
+                 '<div class="report-formula">Statement Yield = Total Actual (R ' + formatCurrency(stdTotalActual) + ') &divide; Total Target (R ' + formatCurrency(stdTotalTarget) + ') = <strong>' + stdYield.toFixed(2) + '%</strong></div>';
         if(hasSAP) {
-            rHTML += `<div class="report-formula" style="border-color:#e67e22;">SAP Corrected Yield = Total Actual (R ${formatCurrency(sapTotalActual)}) ÷ Total Target (R ${formatCurrency(sapTotalTarget)}) = <strong>${sapYield.toFixed(2)}%</strong></div>`;
+            rHTML += '<div class="report-formula" style="border-color:#e67e22;">SAP Corrected Yield = Total Actual (R ' + formatCurrency(sapTotalActual) + ') &divide; Total Target (R ' + formatCurrency(sapTotalTarget) + ') = <strong>' + sapYield.toFixed(2) + '%</strong></div>';
         }
 
-        rHTML += `<h4>Step 2: Determine Multiplier & Bonus</h4>
-                  <p>Based on the matrix, the standard yield of ${stdYield.toFixed(2)}% assigns a <strong>Base Multiplier of ${stdBaseMult}x</strong>. Final standard multiplier (with bonus) is <strong>${stdFinalMult}x</strong>.</p>`;
+        rHTML += '<h4>Step 2: Determine Multiplier & Bonus</h4>' +
+                 '<p>Based on the matrix, the standard yield of ' + stdYield.toFixed(2) + '% assigns a <strong>Base Multiplier of ' + stdBaseMult + 'x</strong>. Final standard multiplier (with bonus) is <strong>' + stdFinalMult + 'x</strong>.</p>';
         if(hasSAP) {
-             rHTML += `<p>Using corrected SAP data, the yield of ${sapYield.toFixed(2)}% assigns a <strong>Base Multiplier of ${sapBaseMult}x</strong>. Final SAP multiplier is <strong>${sapFinalMult}x</strong>.</p>`;
+             rHTML += '<p>Using corrected SAP data, the yield of ' + sapYield.toFixed(2) + '% assigns a <strong>Base Multiplier of ' + sapBaseMult + 'x</strong>. Final SAP multiplier is <strong>' + sapFinalMult + 'x</strong>.</p>';
         }
 
-        rHTML += `<h4>Step 3: Analyze Individual Streams (Segment Logic)</h4>
-                  <ul>${reportStrDetails}</ul>`;
+        rHTML += '<h4>Step 3: Analyze Individual Streams (Segment Logic)</h4><ul>' + reportStrDetails + '</ul>';
 
-        rHTML += `<h4>Step 4: Final Audited Output</h4>
-                  
-                  <p><strong>A. Original Statement Layout:</strong><br>
-                  Input: R ${formatCurrency(baseComm)} Base Target<br>
-                  Final Result: <strong>R ${formatCurrency(finalCalc1)}</strong></p>
-
-                  <p><strong>B. Adjusted Midpoint (${scaleCodeSelect.value}) Layout:</strong><br>
-                  Input: R ${formatCurrency(midComm)} Monthly Midpoint<br>
-                  Final Result: <strong>R ${formatCurrency(finalCalc2)}</strong></p>`;
+        rHTML += '<h4>Step 4: Final Audited Output</h4>' +
+                 '<p><strong>A. Original Statement Layout:</strong><br>' +
+                 'Input: R ' + formatCurrency(baseComm) + ' Base Target<br>' +
+                 'Final Result: <strong>R ' + formatCurrency(finalCalc1) + '</strong></p>' +
+                 '<p><strong>B. Adjusted Midpoint (' + scaleCodeSelect.value + ') Layout:</strong><br>' +
+                 'Input: R ' + formatCurrency(midComm) + ' Monthly Midpoint<br>' +
+                 'Final Result: <strong>R ' + formatCurrency(finalCalc2) + '</strong></p>';
 
         if(hasSAP) {
-            rHTML += `<p><strong>C. Audited Layout (Corrected SAP Data + Midpoint):</strong><br>
-                  Input: R ${formatCurrency(midComm)} Monthly Midpoint with corrected metric overrides.<br>
-                  Final Result: <strong>R ${formatCurrency(finalCalc3)}</strong></p>`;
+            rHTML += '<p><strong>C. Audited Layout (Corrected SAP Data + Midpoint):</strong><br>' +
+                     'Input: R ' + formatCurrency(midComm) + ' Monthly Midpoint with corrected metric overrides.<br>' +
+                     'Final Result: <strong>R ' + formatCurrency(finalCalc3) + '</strong></p>';
         }
 
-        rHTML += `<p style="font-size: 18px; border-top: 2px solid #ccc; padding-top: 10px; margin-top: 15px;"><strong>Final Audit Conclusion:</strong><br>
-                  R ${formatCurrency(trueCommission)} (True Audited Commission) - R ${formatCurrency(finalCalc1)} (Original Statement) = <strong>R ${formatCurrency(Math.abs(diff))} ${diff > 0 ? '(Short Paid)' : diff < 0 ? '(Over Paid)' : '(Balanced)'}</strong></p>`;
+        let auditText = diff > 0 ? '(Short Paid)' : diff < 0 ? '(Over Paid)' : '(Balanced)';
+        rHTML += '<p style="font-size: 18px; border-top: 2px solid #ccc; padding-top: 10px; margin-top: 15px;"><strong>Final Audit Conclusion:</strong><br>' +
+                 'R ' + formatCurrency(trueCommission) + ' (True Audited Commission) - R ' + formatCurrency(finalCalc1) + ' (Original Statement) = <strong>R ' + formatCurrency(Math.abs(diff)) + ' ' + auditText + '</strong></p>';
 
         document.getElementById('calculationReport').innerHTML = rHTML;
     }
@@ -706,22 +710,19 @@
         const weights = roleWeights[selectedRole];
         streamsBody.innerHTML = '';
 
-        for (const [stream, weight] of Object.entries(weights)) {
+        for (const stream in weights) {
+            const weight = weights[stream];
             const tr = document.createElement('tr');
             tr.className = 'stream-row';
             tr.dataset.weight = weight;
             
-            tr.innerHTML = `
-                <td><strong>${stream}</strong></td>
-                <td>${(weight * 100).toFixed(1)}%</td>
-                <td><input type="number" class="target-input" placeholder="0"></td>
-                <td class="no-print" style="text-align: center;">
-                    <button type="button" class="swap-btn" title="Swap Target & Actual">⇄</button>
-                </td>
-                <td><input type="number" class="actual-input" placeholder="0"></td>
-                <td class="percent-cell">0.00%</td>
-                <td><span class="badge fail">Missed</span></td>
-            `;
+            tr.innerHTML = '<td><strong>' + stream + '</strong></td>' +
+                           '<td>' + (weight * 100).toFixed(1) + '%</td>' +
+                           '<td><input type="number" class="target-input" placeholder="0"></td>' +
+                           '<td class="no-print" style="text-align: center;"><button type="button" class="swap-btn" title="Swap Target & Actual">⇄</button></td>' +
+                           '<td><input type="number" class="actual-input" placeholder="0"></td>' +
+                           '<td class="percent-cell">0.00%</td>' +
+                           '<td><span class="badge fail">Missed</span></td>';
             
             tr.querySelector('.swap-btn').addEventListener('click', function() {
                 const tInput = tr.querySelector('.target-input');
@@ -751,6 +752,8 @@
     roleSelect.addEventListener('change', renderTable);
     targetCommissionInput.addEventListener('input', calculate);
     scaleCodeSelect.addEventListener('change', calculate);
+    
+    // Initialize
     renderTable(); 
 
 </script>
