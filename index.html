@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Commission Simulator v1.18</title>
+    <title>Commission Simulator v1.19</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 20px; }
@@ -86,7 +86,7 @@
 
 <div class="container">
     <div class="header-wrap">
-        <h1>Commission Audit Tool <span class="version-badge">v1.18 Stable</span></h1>
+        <h1>Commission Audit Tool <span class="version-badge">v1.19 Stable</span></h1>
         <button class="print-btn no-print" onclick="window.print()">🖨️ Print / Save PDF</button>
     </div>
 
@@ -366,19 +366,22 @@
                 fullText += textContent.items.map(item => item.str).join(" ") + "\n";
             }
 
-            // 1. Robust Name & Pers Number Extraction (Ignores invisible line breaks)
-            const nameMatch = fullText.match(/Personnel Number:\s*(\d+)\s*[-]\s*([\s\S]*?)Position:/i);
-            if (nameMatch) {
-                document.getElementById('empNumber').value = nameMatch[1].trim();
-                // Remove invisible newlines from the name
-                document.getElementById('empName').value = nameMatch[2].replace(/[\r\n]+/g, ' ').trim();
-            } else {
-                // Fallback extraction
-                const fallbackMatch = fullText.match(/Personnel Number:\s*(\d+)\s*-\s*([a-zA-Z\s]+)/i);
-                if(fallbackMatch){
-                    document.getElementById('empNumber').value = fallbackMatch[1].trim();
-                    document.getElementById('empName').value = fallbackMatch[2].replace(/[\r\n]+/g, ' ').trim();
-                }
+            // --- RESTORED EXACT EXTRACTION LOGIC ---
+            const persMatch = fullText.match(/Personnel Number:\s*(\d+)\s*-\s*([A-Za-z\s]+)/i);
+            if (persMatch) {
+                document.getElementById('empNumber').value = persMatch[1].trim();
+                document.getElementById('empName').value = persMatch[2].trim(); 
+            }
+
+            const targetMatch = fullText.match(/Target Commission:\s*([\d,]+\.\d{2})/i);
+            if (targetMatch) {
+                document.getElementById('targetCommission').value = parseFloat(targetMatch[1].replace(/,/g, ''));
+            }
+
+            const dateMatch = fullText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})/i);
+            if (dateMatch) {
+                document.getElementById('stmtMonth').value = dateMatch[1];
+                document.getElementById('stmtYear').value = dateMatch[2];
             }
 
             // Auto-Assign Role
@@ -389,23 +392,9 @@
                 roleSelect.value = "Sport";
             }
 
-            // 2. Robust Target Commission Extraction (Ignores invisible line breaks)
-            const targetCommMatch = fullText.match(/Target Commission:[\s\S]*?([\d,]+\.\d{2})/i);
-            if (targetCommMatch) {
-                document.getElementById('targetCommission').value = parseFloat(targetCommMatch[1].replace(/,/g, ''));
-            }
-
-            // 3. Month & Year Extraction
-            const dateMatch = fullText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})/i);
-            if (dateMatch) {
-                document.getElementById('stmtMonth').value = dateMatch[1];
-                document.getElementById('stmtYear').value = dateMatch[2];
-            }
-
             updateFileName();
             renderTable();
 
-            // 4. Stream Target/Actual Extraction
             const rows = document.querySelectorAll('.stream-row');
             rows.forEach(row => {
                 const streamName = row.querySelector('strong').innerText;
@@ -520,7 +509,6 @@
             const stdTarget = parseFloat(row.querySelector('.target-input').value) || 0;
             const stdActual = parseFloat(row.querySelector('.actual-input').value) || 0;
             
-            // Safe checking for SAP overrides
             let sapTarget = stdTarget;
             let sapActual = stdActual;
             
@@ -715,6 +703,17 @@
     }
 
     function renderTable() {
+        // --- ADDED: MEMORY RETENTION FOR ROLE SWAP ---
+        const savedInputs = {};
+        document.querySelectorAll('.stream-row').forEach(row => {
+            const stream = row.querySelector('strong').innerText;
+            const tVal = row.querySelector('.target-input').value;
+            const aVal = row.querySelector('.actual-input').value;
+            if(tVal || aVal) {
+                savedInputs[stream] = { target: tVal, actual: aVal };
+            }
+        });
+
         const selectedRole = roleSelect.value;
         const weights = roleWeights[selectedRole];
         streamsBody.innerHTML = '';
@@ -725,25 +724,29 @@
             tr.className = 'stream-row';
             tr.dataset.weight = weight;
             
+            // Re-apply saved values if they exist
+            const tVal = savedInputs[stream] ? savedInputs[stream].target : '';
+            const aVal = savedInputs[stream] ? savedInputs[stream].actual : '';
+            
             tr.innerHTML = '<td><strong>' + stream + '</strong></td>' +
                            '<td>' + (weight * 100).toFixed(1) + '%</td>' +
-                           '<td><input type="number" class="target-input" placeholder="0"></td>' +
+                           '<td><input type="number" class="target-input" placeholder="0" value="' + tVal + '"></td>' +
                            '<td class="no-print" style="text-align: center;"><button type="button" class="swap-btn" title="Swap Target & Actual">⇄</button></td>' +
-                           '<td><input type="number" class="actual-input" placeholder="0"></td>' +
+                           '<td><input type="number" class="actual-input" placeholder="0" value="' + aVal + '"></td>' +
                            '<td class="percent-cell">0.00%</td>' +
                            '<td><span class="badge fail">Missed</span></td>';
             
             tr.querySelector('.swap-btn').addEventListener('click', function() {
                 const tInput = tr.querySelector('.target-input');
                 const aInput = tr.querySelector('.actual-input');
-                let tVal = tInput.value;
-                let aVal = aInput.value;
+                let currentT = tInput.value;
+                let currentA = aInput.value;
                 
-                if (tVal === '100' || tVal === '100.00') tVal = ''; 
-                if (aVal === '100' || aVal === '100.00') aVal = ''; 
+                if (currentT === '100' || currentT === '100.00') currentT = ''; 
+                if (currentA === '100' || currentA === '100.00') currentA = ''; 
                 
-                tInput.value = aVal;
-                aInput.value = tVal;
+                tInput.value = currentA;
+                aInput.value = currentT;
                 calculate();
             });
 
