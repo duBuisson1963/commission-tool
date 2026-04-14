@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Commission Simulator v1.22</title>
+    <title>Commission Simulator v1.23</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 20px; }
@@ -91,7 +91,7 @@
 
 <div class="container">
     <div class="header-wrap">
-        <h1>Commission Audit Tool <span class="version-badge">v1.22 Stable</span></h1>
+        <h1>Commission Audit Tool <span class="version-badge">v1.23 Stable</span></h1>
         <button class="print-btn no-print" onclick="window.print()">🖨️ Print / Save PDF</button>
     </div>
 
@@ -332,6 +332,7 @@
 
     let sapOverrides = {};
     
+    // NEW: The Master Global Vault
     let globalSavedInputs = {};
 
     function updateFileName() {
@@ -377,6 +378,7 @@
                 fullText += textContent.items.map(item => item.str).join(" ") + "\n";
             }
 
+            // Extract User Metadata
             const nameMatch = fullText.match(/Personnel Number:\s*(\d+)\s*[-]\s*([\s\S]*?)\s*Position:/i);
             if (nameMatch) {
                 document.getElementById('empNumber').value = nameMatch[1].trim();
@@ -412,12 +414,15 @@
                 roleSelect.value = "Sport";
             }
 
-            updateFileName();
-            renderTable();
+            // --- THE FIX: Extract ALL possible streams globally ---
+            const allPossibleStreams = new Set();
+            for (const role in roleWeights) {
+                for (const stream in roleWeights[role]) {
+                    allPossibleStreams.add(stream);
+                }
+            }
 
-            const rows = document.querySelectorAll('.stream-row');
-            rows.forEach(row => {
-                const streamName = row.querySelector('strong').innerText;
+            allPossibleStreams.forEach(streamName => {
                 const streamRegex = new RegExp(streamName + "[^0-9]*([0-9,]+\\.\\d{2})[^0-9]*([0-9,]+\\.\\d{2})", 'i');
                 const streamMatch = fullText.match(streamRegex);
                 
@@ -425,16 +430,18 @@
                     const actualVal = parseFloat(streamMatch[1].replace(/,/g, ''));
                     const targetVal = parseFloat(streamMatch[2].replace(/,/g, ''));
                     
-                    row.querySelector('.actual-input').value = actualVal;
-                    row.querySelector('.target-input').value = targetVal;
-                    
-                    if (!globalSavedInputs[streamName]) globalSavedInputs[streamName] = { target: '', actual: '' };
+                    if (!globalSavedInputs[streamName]) {
+                        globalSavedInputs[streamName] = { target: '', actual: '' };
+                    }
                     globalSavedInputs[streamName].actual = actualVal;
                     globalSavedInputs[streamName].target = targetVal;
                 }
             });
 
-            calculate();
+            updateFileName();
+            // Render table AFTER vault is populated
+            renderTable();
+
             statusLabel.innerText = "Data loaded! Please verify numbers.";
             statusLabel.style.color = "#27ae60";
 
@@ -728,18 +735,6 @@
     }
 
     function renderTable() {
-        document.querySelectorAll('.stream-row').forEach(row => {
-            const stream = row.querySelector('strong').innerText;
-            const tVal = row.querySelector('.target-input').value;
-            const aVal = row.querySelector('.actual-input').value;
-            
-            if (!globalSavedInputs[stream]) {
-                globalSavedInputs[stream] = { target: '', actual: '' };
-            }
-            if (tVal !== '') globalSavedInputs[stream].target = tVal;
-            if (aVal !== '') globalSavedInputs[stream].actual = aVal;
-        });
-
         const selectedRole = roleSelect.value;
         const weights = roleWeights[selectedRole];
         streamsBody.innerHTML = '';
@@ -750,6 +745,7 @@
             tr.className = 'stream-row';
             tr.dataset.weight = weight;
             
+            // Pull from Global Vault
             const tVal = globalSavedInputs[stream] ? globalSavedInputs[stream].target : '';
             const aVal = globalSavedInputs[stream] ? globalSavedInputs[stream].actual : '';
             
@@ -761,26 +757,42 @@
                            '<td class="percent-cell">0.00%</td>' +
                            '<td><span class="badge fail">Missed</span></td>';
             
+            // Direct save to vault when typing
+            const targetInput = tr.querySelector('.target-input');
+            const actualInput = tr.querySelector('.actual-input');
+
+            targetInput.addEventListener('input', function() {
+                if (!globalSavedInputs[stream]) globalSavedInputs[stream] = { target: '', actual: '' };
+                globalSavedInputs[stream].target = this.value;
+                calculate();
+            });
+
+            actualInput.addEventListener('input', function() {
+                if (!globalSavedInputs[stream]) globalSavedInputs[stream] = { target: '', actual: '' };
+                globalSavedInputs[stream].actual = this.value;
+                calculate();
+            });
+
+            // Vault sync on Swap
             tr.querySelector('.swap-btn').addEventListener('click', function() {
-                const tInput = tr.querySelector('.target-input');
-                const aInput = tr.querySelector('.actual-input');
-                let currentT = tInput.value;
-                let currentA = aInput.value;
+                let currentT = targetInput.value;
+                let currentA = actualInput.value;
                 
                 if (currentT === '100' || currentT === '100.00') currentT = ''; 
                 if (currentA === '100' || currentA === '100.00') currentA = ''; 
                 
-                tInput.value = currentA;
-                aInput.value = currentT;
+                targetInput.value = currentA;
+                actualInput.value = currentT;
+
+                if (!globalSavedInputs[stream]) globalSavedInputs[stream] = { target: '', actual: '' };
+                globalSavedInputs[stream].target = currentA;
+                globalSavedInputs[stream].actual = currentT;
+
                 calculate();
             });
 
             streamsBody.appendChild(tr);
         }
-
-        document.querySelectorAll('input').forEach(input => {
-            input.addEventListener('input', calculate);
-        });
         
         updateSapDropdown();
         calculate();
