@@ -3,11 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Commission Audit Tool v1.23 Stable</title>
-    <!-- PDF Text Extraction Library -->
+    <title>Commission Simulator v1.23</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <!-- NEW LIBRARY: Added to handle true PDF generation and direct saving -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 20px; }
         .container { max-width: 950px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
@@ -92,15 +89,15 @@
 </head>
 <body>
 
-<div class="container" id="auditContainer">
+<div class="container">
     <div class="header-wrap">
         <h1>Commission Audit Tool <span class="version-badge">v1.23 Stable</span></h1>
-        <button class="print-btn no-print" onclick="exportCurrentRecordAsPDF()">💾 Export PDF Report</button>
+        <button class="print-btn no-print" onclick="window.print()">🖨️ Print / Save PDF</button>
     </div>
 
     <div class="pdf-upload-section no-print">
-        <label for="pdfUpload">📄 Bulk Auto-Fill & Export PDFs:</label>
-        <input type="file" id="pdfUpload" accept="application/pdf" multiple>
+        <label for="pdfUpload">📄 Auto-Fill from Statement PDF:</label>
+        <input type="file" id="pdfUpload" accept="application/pdf">
         <span id="pdfStatus" style="font-size: 12px; color: #555;"></span>
     </div>
     
@@ -304,6 +301,13 @@
 </div>
 
 <script>
+    // Initialize PDF.js
+    if (typeof pdfjsLib !== 'undefined') {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    } else {
+        console.warn("PDF.js library not loaded. File upload extraction will not work.");
+    }
+
     const roleWeights = {
         "CorpEnter": { "TV Classic": 0.4, "Radio Classic": 0.3, "Radio Sponsorship": 0.1, "TV Sponsorship": 0.1, "Digital": 0.05, "TV Sport": 0.025, "Radio Sport": 0.025 },
         "SMMEGovt": { "Radio Classic": 0.45, "TV Classic": 0.24, "Radio Sponsorship": 0.15, "TV Sponsorship": 0.06, "Digital": 0.05, "TV Sport": 0.025, "Radio Sport": 0.025 },
@@ -327,12 +331,9 @@
     const streamsBody = document.getElementById('streamsBody');
 
     let sapOverrides = {};
+    
+    // NEW: The Master Global Vault
     let globalSavedInputs = {};
-
-    // Base configuration for PDF library
-    if (typeof pdfjsLib !== 'undefined') {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    }
 
     function updateFileName() {
         const n = document.getElementById('empName').value.trim().replace(/\s+/g, '_') || 'Employee';
@@ -340,7 +341,6 @@
         const m = document.getElementById('stmtMonth').value.trim() || 'Month';
         const y = document.getElementById('stmtYear').value.trim() || 'Year';
         document.title = n + '_' + p + '_' + m + '_' + y;
-        return n + '_' + p + '_' + m + '_' + y;
     }
 
     document.getElementById('empName').addEventListener('input', updateFileName);
@@ -360,130 +360,97 @@
         return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
-    // HELPER: Generates a promise-based structural timeout delay
-    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-    // UPDATED: Process loop engine for bulk imports
     document.getElementById('pdfUpload').addEventListener('change', async function(e) {
-        const files = e.target.files;
-        if (!files || files.length === 0) return;
+        const file = e.target.files[0];
+        if (!file) return;
 
         const statusLabel = document.getElementById('pdfStatus');
-        
-        for (let idx = 0; idx < files.length; idx++) {
-            const file = files[idx];
-            statusLabel.innerText = `Processing batch record (${idx + 1}/${files.length}): ${file.name}...`;
-            statusLabel.style.color = "#2980b9";
+        statusLabel.innerText = "Reading PDF...";
 
-            try {
-                const arrayBuffer = await file.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                let fullText = "";
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let fullText = "";
 
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    const page = await pdf.getPage(i);
-                    const textContent = await page.getTextContent();
-                    fullText += textContent.items.map(item => item.str).join(" ") + "\n";
-                }
-
-                // Extract User Metadata
-                const nameMatch = fullText.match(/Personnel Number:\s*(\d+)\s*[-]\s*([\s\S]*?)\s*Position:/i);
-                if (nameMatch) {
-                    document.getElementById('empNumber').value = nameMatch[1].trim();
-                    document.getElementById('empName').value = nameMatch[2].replace(/[\r\n\t]+/g, ' ').trim();
-                } else {
-                    const fallbackMatch = fullText.match(/Personnel Number:\s*(\d+)\s*-\s*(.*?)(?=\s*Position:|$)/i);
-                    if(fallbackMatch){
-                        document.getElementById('empNumber').value = fallbackMatch[1].trim();
-                        document.getElementById('empName').value = fallbackMatch[2].replace(/[\r\n\t]+/g, ' ').trim();
-                    }
-                }
-
-                const positionMatch = fullText.match(/Position:\s*([\s\S]*?)(?=\s*Target Commission|\s*Commission Statement)/i);
-                if (positionMatch) {
-                    document.getElementById('empPosition').value = positionMatch[1].replace(/[\r\n\t]+/g, ' ').trim();
-                }
-
-                const targetMatch = fullText.match(/Target Commission:\s*([\d,]+\.\d{2})/i);
-                if (targetMatch) {
-                    document.getElementById('targetCommission').value = parseFloat(targetMatch[1].replace(/,/g, ''));
-                }
-
-                const dateMatch = fullText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})/i);
-                if (dateMatch) {
-                    document.getElementById('stmtMonth').value = dateMatch[1];
-                    document.getElementById('stmtYear').value = dateMatch[2];
-                }
-
-                const currentNameStr = document.getElementById('empName').value.toLowerCase();
-                if (currentNameStr.indexOf("basil") !== -1) {
-                    roleSelect.value = "SMMEGovt";
-                } else if (currentNameStr.indexOf("werner") !== -1) {
-                    roleSelect.value = "Sport";
-                }
-
-                // Reset global variables for the loop iteration
-                globalSavedInputs = {};
-
-                const allPossibleStreams = new Set();
-                for (const role in roleWeights) {
-                    for (const stream in roleWeights[role]) {
-                        allPossibleStreams.add(stream);
-                    }
-                }
-
-                allPossibleStreams.forEach(streamName => {
-                    const streamRegex = new RegExp(streamName + "[^0-9]*([0-9,]+\\.\\d{2})[^0-9]*([0-9,]+\\.\\d{2})", 'i');
-                    const streamMatch = fullText.match(streamRegex);
-                    
-                    if(streamMatch) {
-                        const actualVal = parseFloat(streamMatch[1].replace(/,/g, ''));
-                        const targetVal = parseFloat(streamMatch[2].replace(/,/g, ''));
-                        
-                        if (!globalSavedInputs[streamName]) {
-                            globalSavedInputs[streamName] = { target: '', actual: '' };
-                        }
-                        globalSavedInputs[streamName].actual = actualVal;
-                        globalSavedInputs[streamName].target = targetVal;
-                    }
-                });
-
-                const currentFileName = updateFileName();
-                renderTable();
-
-                // CRITICAL FIX: Add a short pause to ensure DOM inputs populate and calculations resolve before printing
-                await sleep(600);
-
-                // Run execution using the true PDF compiler
-                await exportCurrentRecordAsPDF(currentFileName);
-
-            } catch (error) {
-                console.error(`Error processing file ${file.name}:`, error);
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                fullText += textContent.items.map(item => item.str).join(" ") + "\n";
             }
+
+            // Extract User Metadata
+            const nameMatch = fullText.match(/Personnel Number:\s*(\d+)\s*[-]\s*([\s\S]*?)\s*Position:/i);
+            if (nameMatch) {
+                document.getElementById('empNumber').value = nameMatch[1].trim();
+                document.getElementById('empName').value = nameMatch[2].replace(/[\r\n\t]+/g, ' ').trim();
+            } else {
+                const fallbackMatch = fullText.match(/Personnel Number:\s*(\d+)\s*-\s*(.*?)(?=\s*Position:|$)/i);
+                if(fallbackMatch){
+                    document.getElementById('empNumber').value = fallbackMatch[1].trim();
+                    document.getElementById('empName').value = fallbackMatch[2].replace(/[\r\n\t]+/g, ' ').trim();
+                }
+            }
+
+            const positionMatch = fullText.match(/Position:\s*([\s\S]*?)(?=\s*Target Commission|\s*Commission Statement)/i);
+            if (positionMatch) {
+                document.getElementById('empPosition').value = positionMatch[1].replace(/[\r\n\t]+/g, ' ').trim();
+            }
+
+            const targetMatch = fullText.match(/Target Commission:\s*([\d,]+\.\d{2})/i);
+            if (targetMatch) {
+                document.getElementById('targetCommission').value = parseFloat(targetMatch[1].replace(/,/g, ''));
+            }
+
+            const dateMatch = fullText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})/i);
+            if (dateMatch) {
+                document.getElementById('stmtMonth').value = dateMatch[1];
+                document.getElementById('stmtYear').value = dateMatch[2];
+            }
+
+            const currentNameStr = document.getElementById('empName').value.toLowerCase();
+            if (currentNameStr.indexOf("basil") !== -1) {
+                roleSelect.value = "SMMEGovt";
+            } else if (currentNameStr.indexOf("werner") !== -1) {
+                roleSelect.value = "Sport";
+            }
+
+            // --- THE FIX: Extract ALL possible streams globally ---
+            const allPossibleStreams = new Set();
+            for (const role in roleWeights) {
+                for (const stream in roleWeights[role]) {
+                    allPossibleStreams.add(stream);
+                }
+            }
+
+            allPossibleStreams.forEach(streamName => {
+                const streamRegex = new RegExp(streamName + "[^0-9]*([0-9,]+\\.\\d{2})[^0-9]*([0-9,]+\\.\\d{2})", 'i');
+                const streamMatch = fullText.match(streamRegex);
+                
+                if(streamMatch) {
+                    const actualVal = parseFloat(streamMatch[1].replace(/,/g, ''));
+                    const targetVal = parseFloat(streamMatch[2].replace(/,/g, ''));
+                    
+                    if (!globalSavedInputs[streamName]) {
+                        globalSavedInputs[streamName] = { target: '', actual: '' };
+                    }
+                    globalSavedInputs[streamName].actual = actualVal;
+                    globalSavedInputs[streamName].target = targetVal;
+                }
+            });
+
+            updateFileName();
+            // Render table AFTER vault is populated
+            renderTable();
+
+            statusLabel.innerText = "Data loaded! Please verify numbers.";
+            statusLabel.style.color = "#27ae60";
+
+        } catch (error) {
+            console.error(error);
+            statusLabel.innerText = "Error reading PDF. Please fill manually.";
+            statusLabel.style.color = "#e74c3c";
         }
-
-        statusLabel.innerText = `All ${files.length} audits completed and saved directly as true PDFs!`;
-        statusLabel.style.color = "#27ae60";
     });
-
-    // FIXED: True PDF compiler engine utilizing html2pdf.js
-    function exportCurrentRecordAsPDF(forcedName = "") {
-        const fileName = forcedName || updateFileName();
-        const element = document.getElementById('auditContainer');
-        
-        // Define runtime export settings matching your custom CSS page configurations
-        const exportOptions = {
-            margin:       [10, 10, 10, 10],
-            filename:     `${fileName}.pdf`,
-            image:        { type: 'jpeg', quality: 0.98 },
-            html2canvas:  { scale: 2, useCORS: true },
-            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
-            pagebreak:    { mode: ['avoid-all', 'css'] }
-        };
-
-        // Executes asynchronous background compilation without blocking layout routines
-        return html2pdf().set(exportOptions).from(element).save();
-    }
 
     function updateSapDropdown() {
         const streams = Object.keys(roleWeights[roleSelect.value]);
@@ -741,7 +708,7 @@
         rHTML += '<h4>Step 2: Determine Multiplier & Bonus</h4>' +
                  '<p>Based on the matrix, the standard yield of ' + stdYield.toFixed(2) + '% assigns a <strong>Base Multiplier of ' + stdBaseMult + 'x</strong>. Final standard multiplier (with bonus) is <strong>' + stdFinalMult + 'x</strong>.</p>';
         if(hasSAP) {
-            rHTML += '<p>Using corrected SAP data, the yield of ' + sapYield.toFixed(2) + '% assigns a <strong>Base Multiplier of ' + sapBaseMult + 'x</strong>. Final SAP multiplier is <strong>' + sapFinalMult + 'x</strong>.</p>';
+             rHTML += '<p>Using corrected SAP data, the yield of ' + sapYield.toFixed(2) + '% assigns a <strong>Base Multiplier of ' + sapBaseMult + 'x</strong>. Final SAP multiplier is <strong>' + sapFinalMult + 'x</strong>.</p>';
         }
 
         rHTML += '<h4>Step 3: Analyze Individual Streams (Segment Logic)</h4><ul>' + reportStrDetails + '</ul>';
@@ -778,6 +745,7 @@
             tr.className = 'stream-row';
             tr.dataset.weight = weight;
             
+            // Pull from Global Vault
             const tVal = globalSavedInputs[stream] ? globalSavedInputs[stream].target : '';
             const aVal = globalSavedInputs[stream] ? globalSavedInputs[stream].actual : '';
             
@@ -789,6 +757,7 @@
                            '<td class="percent-cell">0.00%</td>' +
                            '<td><span class="badge fail">Missed</span></td>';
             
+            // Direct save to vault when typing
             const targetInput = tr.querySelector('.target-input');
             const actualInput = tr.querySelector('.actual-input');
 
@@ -804,6 +773,7 @@
                 calculate();
             });
 
+            // Vault sync on Swap
             tr.querySelector('.swap-btn').addEventListener('click', function() {
                 let currentT = targetInput.value;
                 let currentA = actualInput.value;
@@ -832,7 +802,9 @@
     targetCommissionInput.addEventListener('input', calculate);
     scaleCodeSelect.addEventListener('change', calculate);
     
+    // Initialize
     renderTable(); 
+
 </script>
 </body>
 </html>
