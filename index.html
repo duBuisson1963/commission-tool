@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Commission Simulator v1.23</title>
+    <title>Commission Audit Tool v1.23 Stable</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 20px; }
@@ -92,12 +92,14 @@
 <div class="container">
     <div class="header-wrap">
         <h1>Commission Audit Tool <span class="version-badge">v1.23 Stable</span></h1>
-        <button class="print-btn no-print" onclick="window.print()">🖨️ Print / Save PDF</button>
+        <!-- Layout remains exactly intact, but target function updated to trigger HTML file down-save -->
+        <button class="print-btn no-print" onclick="saveCurrentAuditAsHTML()">💾 Export Audit Reports</button>
     </div>
 
     <div class="pdf-upload-section no-print">
-        <label for="pdfUpload">📄 Auto-Fill from Statement PDF:</label>
-        <input type="file" id="pdfUpload" accept="application/pdf">
+        <!-- Changed to accept bulk uploads (multiple keyword added) -->
+        <label for="pdfUpload">📄 Bulk Auto-Fill & Save Statement PDFs:</label>
+        <input type="file" id="pdfUpload" accept="application/pdf" multiple>
         <span id="pdfStatus" style="font-size: 12px; color: #555;"></span>
     </div>
     
@@ -331,8 +333,6 @@
     const streamsBody = document.getElementById('streamsBody');
 
     let sapOverrides = {};
-    
-    // NEW: The Master Global Vault
     let globalSavedInputs = {};
 
     function updateFileName() {
@@ -341,6 +341,7 @@
         const m = document.getElementById('stmtMonth').value.trim() || 'Month';
         const y = document.getElementById('stmtYear').value.trim() || 'Year';
         document.title = n + '_' + p + '_' + m + '_' + y;
+        return n + '_' + p + '_' + m + '_' + y;
     }
 
     document.getElementById('empName').addEventListener('input', updateFileName);
@@ -360,97 +361,151 @@
         return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    // UPDATED: Bulk Processing Engine Loop
     document.getElementById('pdfUpload').addEventListener('change', async function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
 
         const statusLabel = document.getElementById('pdfStatus');
-        statusLabel.innerText = "Reading PDF...";
+        
+        // Loop through all selected statements sequentially
+        for (let idx = 0; idx < files.length; idx++) {
+            const file = files[idx];
+            statusLabel.innerText = `Processing batch file (${idx + 1}/${files.length}): ${file.name}...`;
+            statusLabel.style.color = "#2980b9";
 
-        try {
-            const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            let fullText = "";
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let fullText = "";
 
-            for (let i = 1; i <= pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
-                const textContent = await page.getTextContent();
-                fullText += textContent.items.map(item => item.str).join(" ") + "\n";
-            }
-
-            // Extract User Metadata
-            const nameMatch = fullText.match(/Personnel Number:\s*(\d+)\s*[-]\s*([\s\S]*?)\s*Position:/i);
-            if (nameMatch) {
-                document.getElementById('empNumber').value = nameMatch[1].trim();
-                document.getElementById('empName').value = nameMatch[2].replace(/[\r\n\t]+/g, ' ').trim();
-            } else {
-                const fallbackMatch = fullText.match(/Personnel Number:\s*(\d+)\s*-\s*(.*?)(?=\s*Position:|$)/i);
-                if(fallbackMatch){
-                    document.getElementById('empNumber').value = fallbackMatch[1].trim();
-                    document.getElementById('empName').value = fallbackMatch[2].replace(/[\r\n\t]+/g, ' ').trim();
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    fullText += textContent.items.map(item => item.str).join(" ") + "\n";
                 }
-            }
 
-            const positionMatch = fullText.match(/Position:\s*([\s\S]*?)(?=\s*Target Commission|\s*Commission Statement)/i);
-            if (positionMatch) {
-                document.getElementById('empPosition').value = positionMatch[1].replace(/[\r\n\t]+/g, ' ').trim();
-            }
-
-            const targetMatch = fullText.match(/Target Commission:\s*([\d,]+\.\d{2})/i);
-            if (targetMatch) {
-                document.getElementById('targetCommission').value = parseFloat(targetMatch[1].replace(/,/g, ''));
-            }
-
-            const dateMatch = fullText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})/i);
-            if (dateMatch) {
-                document.getElementById('stmtMonth').value = dateMatch[1];
-                document.getElementById('stmtYear').value = dateMatch[2];
-            }
-
-            const currentNameStr = document.getElementById('empName').value.toLowerCase();
-            if (currentNameStr.indexOf("basil") !== -1) {
-                roleSelect.value = "SMMEGovt";
-            } else if (currentNameStr.indexOf("werner") !== -1) {
-                roleSelect.value = "Sport";
-            }
-
-            // --- THE FIX: Extract ALL possible streams globally ---
-            const allPossibleStreams = new Set();
-            for (const role in roleWeights) {
-                for (const stream in roleWeights[role]) {
-                    allPossibleStreams.add(stream);
-                }
-            }
-
-            allPossibleStreams.forEach(streamName => {
-                const streamRegex = new RegExp(streamName + "[^0-9]*([0-9,]+\\.\\d{2})[^0-9]*([0-9,]+\\.\\d{2})", 'i');
-                const streamMatch = fullText.match(streamRegex);
-                
-                if(streamMatch) {
-                    const actualVal = parseFloat(streamMatch[1].replace(/,/g, ''));
-                    const targetVal = parseFloat(streamMatch[2].replace(/,/g, ''));
-                    
-                    if (!globalSavedInputs[streamName]) {
-                        globalSavedInputs[streamName] = { target: '', actual: '' };
+                // Extract User Metadata
+                const nameMatch = fullText.match(/Personnel Number:\s*(\d+)\s*[-]\s*([\s\S]*?)\s*Position:/i);
+                if (nameMatch) {
+                    document.getElementById('empNumber').value = nameMatch[1].trim();
+                    document.getElementById('empName').value = nameMatch[2].replace(/[\r\n\t]+/g, ' ').trim();
+                } else {
+                    const fallbackMatch = fullText.match(/Personnel Number:\s*(\d+)\s*-\s*(.*?)(?=\s*Position:|$)/i);
+                    if(fallbackMatch){
+                        document.getElementById('empNumber').value = fallbackMatch[1].trim();
+                        document.getElementById('empName').value = fallbackMatch[2].replace(/[\r\n\t]+/g, ' ').trim();
                     }
-                    globalSavedInputs[streamName].actual = actualVal;
-                    globalSavedInputs[streamName].target = targetVal;
                 }
-            });
 
-            updateFileName();
-            // Render table AFTER vault is populated
-            renderTable();
+                const positionMatch = fullText.match(/Position:\s*([\s\S]*?)(?=\s*Target Commission|\s*Commission Statement)/i);
+                if (positionMatch) {
+                    document.getElementById('empPosition').value = positionMatch[1].replace(/[\r\n\t]+/g, ' ').trim();
+                }
 
-            statusLabel.innerText = "Data loaded! Please verify numbers.";
-            statusLabel.style.color = "#27ae60";
+                const targetMatch = fullText.match(/Target Commission:\s*([\d,]+\.\d{2})/i);
+                if (targetMatch) {
+                    document.getElementById('targetCommission').value = parseFloat(targetMatch[1].replace(/,/g, ''));
+                }
 
-        } catch (error) {
-            console.error(error);
-            statusLabel.innerText = "Error reading PDF. Please fill manually.";
-            statusLabel.style.color = "#e74c3c";
+                const dateMatch = fullText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})/i);
+                if (dateMatch) {
+                    document.getElementById('stmtMonth').value = dateMatch[1];
+                    document.getElementById('stmtYear').value = dateMatch[2];
+                }
+
+                const currentNameStr = document.getElementById('empName').value.toLowerCase();
+                if (currentNameStr.indexOf("basil") !== -1) {
+                    roleSelect.value = "SMMEGovt";
+                } else if (currentNameStr.indexOf("werner") !== -1) {
+                    roleSelect.value = "Sport";
+                }
+
+                // Clear input vault for fresh loop population
+                globalSavedInputs = {};
+
+                const allPossibleStreams = new Set();
+                for (const role in roleWeights) {
+                    for (const stream in roleWeights[role]) {
+                        allPossibleStreams.add(stream);
+                    }
+                }
+
+                allPossibleStreams.forEach(streamName => {
+                    const streamRegex = new RegExp(streamName + "[^0-9]*([0-9,]+\\.\\d{2})[^0-9]*([0-9,]+\\.\\d{2})", 'i');
+                    const streamMatch = fullText.match(streamRegex);
+                    
+                    if(streamMatch) {
+                        const actualVal = parseFloat(streamMatch[1].replace(/,/g, ''));
+                        const targetVal = parseFloat(streamMatch[2].replace(/,/g, ''));
+                        
+                        if (!globalSavedInputs[streamName]) {
+                            globalSavedInputs[streamName] = { target: '', actual: '' };
+                        }
+                        globalSavedInputs[streamName].actual = actualVal;
+                        globalSavedInputs[streamName].target = targetVal;
+                    }
+                });
+
+                const generatedFileName = updateFileName();
+                renderTable();
+
+                // Automatically save processed dashboard output to Downloads folder
+                saveCurrentAuditAsHTML(generatedFileName);
+
+            } catch (error) {
+                console.error(`Error processing file ${file.name}:`, error);
+            }
         }
+
+        statusLabel.innerText = `Successfully audited and saved all ${files.length} statements! Check your Downloads folder.`;
+        statusLabel.style.color = "#27ae60";
     });
+
+    // NEW: Automated Document Down-save function (Bypasses UI Print Prompt windows)
+    function saveCurrentAuditAsHTML(forcedName = "") {
+        const fileName = forcedName || updateFileName();
+        
+        // Clones complete layout configuration including current values and formulas
+        const outputStyles = Array.from(document.styleSheets).map(styleSheet => {
+            try {
+                return Array.from(styleSheet.cssRules).map(rule => rule.cssText).join('\n');
+            } catch (e) {
+                return '';
+            }
+        }).join('\n');
+
+        // Formats static values explicitly to preserve computed values across file transfers
+        const inlineTargetInputs = document.querySelectorAll('.target-input');
+        inlineTargetInputs.forEach(input => input.setAttribute('value', input.value));
+        const inlineActualInputs = document.querySelectorAll('.actual-input');
+        inlineActualInputs.forEach(input => input.setAttribute('value', input.value));
+
+        const htmlBlobContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>${fileName}</title>
+                <style>${outputStyles}</style>
+            </head>
+            <body>
+                <div class="container">${document.querySelector('.container').innerHTML}</div>
+                <script>
+                    // Self-executing utility ensures interactive elements remain hidden on static download files
+                    document.querySelectorAll('.no-print').forEach(el => el.style.display = 'none');
+                <\/script>
+            </body>
+            </html>
+        `;
+
+        const fileBlob = new Blob([htmlBlobContent], { type: 'text/html;charset=utf-8' });
+        const temporaryLink = document.createElement('a');
+        temporaryLink.href = URL.createObjectURL(fileBlob);
+        temporaryLink.download = `${fileName}.html`;
+        document.body.appendChild(temporaryLink);
+        temporaryLink.click();
+        document.body.removeChild(temporaryLink);
+    }
 
     function updateSapDropdown() {
         const streams = Object.keys(roleWeights[roleSelect.value]);
@@ -613,9 +668,9 @@
 
             if (stdTarget > 0 || sapTarget > 0) {
                 reportStrDetails += '<li><strong>' + streamName + ' (' + (weight * 100).toFixed(1) + '% Weight):</strong><br>';
-                reportStrDetails += '<em>Statement:</em> Actual R ' + formatCurrency(stdActual) + ' &divide; Target R ' + formatCurrency(stdTarget) + ' = <strong>' + stdPct.toFixed(2) + '% Achieved</strong> (' + (stdAchieved ? 'Met' : 'Missed') + ')<br>';
+                reportStrDetails += '<em>Statement:</em> Actual R ' + formatCurrency(stdActual) + ' &divide; Target R ' + formatCurrency(stdTarget) + ' = <strong>' + stdPct.toFixed(2) + '% Achieved</strong> (' + (stdAchieved ? 'Met' : 'Missed') + ')br>';
                 if(hasSAP) {
-                    reportStrDetails += '<em>SAP Data:</em> Actual R ' + formatCurrency(sapActual) + ' &divide; Target R ' + formatCurrency(sapTarget) + ' = <strong>' + sapPct.toFixed(2) + '% Achieved</strong> (' + (sapAchieved ? 'Met' : 'Missed') + ')<br>';
+                    reportStrDetails += '<em>SAP Data:</em> Actual R ' + formatCurrency(sapActual) + ' &divide; Target R ' + formatCurrency(sapTarget) + ' = <strong>' + sapPct.toFixed(2) + '% Achieved</strong> (' + (sapAchieved ? 'Met' : 'Missed') + ')br>';
                 }
                 reportStrDetails += '<em>- Midpoint Segment Value:</em> R ' + formatCurrency(midComm) + ' &times; ' + (weight * 100).toFixed(1) + '% = R ' + formatCurrency(midComm * weight) + '</li><hr style="border:0; border-bottom: 1px dashed #eee; margin: 10px 0;">';
             }
@@ -708,7 +763,7 @@
         rHTML += '<h4>Step 2: Determine Multiplier & Bonus</h4>' +
                  '<p>Based on the matrix, the standard yield of ' + stdYield.toFixed(2) + '% assigns a <strong>Base Multiplier of ' + stdBaseMult + 'x</strong>. Final standard multiplier (with bonus) is <strong>' + stdFinalMult + 'x</strong>.</p>';
         if(hasSAP) {
-             rHTML += '<p>Using corrected SAP data, the yield of ' + sapYield.toFixed(2) + '% assigns a <strong>Base Multiplier of ' + sapBaseMult + 'x</strong>. Final SAP multiplier is <strong>' + sapFinalMult + 'x</strong>.</p>';
+            rHTML += '<p>Using corrected SAP data, the yield of ' + sapYield.toFixed(2) + '% assigns a <strong>Base Multiplier of ' + sapBaseMult + 'x</strong>. Final SAP multiplier is <strong>' + sapFinalMult + 'x</strong>.</p>';
         }
 
         rHTML += '<h4>Step 3: Analyze Individual Streams (Segment Logic)</h4><ul>' + reportStrDetails + '</ul>';
@@ -745,7 +800,6 @@
             tr.className = 'stream-row';
             tr.dataset.weight = weight;
             
-            // Pull from Global Vault
             const tVal = globalSavedInputs[stream] ? globalSavedInputs[stream].target : '';
             const aVal = globalSavedInputs[stream] ? globalSavedInputs[stream].actual : '';
             
@@ -757,7 +811,6 @@
                            '<td class="percent-cell">0.00%</td>' +
                            '<td><span class="badge fail">Missed</span></td>';
             
-            // Direct save to vault when typing
             const targetInput = tr.querySelector('.target-input');
             const actualInput = tr.querySelector('.actual-input');
 
@@ -773,7 +826,6 @@
                 calculate();
             });
 
-            // Vault sync on Swap
             tr.querySelector('.swap-btn').addEventListener('click', function() {
                 let currentT = targetInput.value;
                 let currentA = actualInput.value;
@@ -802,7 +854,7 @@
     targetCommissionInput.addEventListener('input', calculate);
     scaleCodeSelect.addEventListener('change', calculate);
     
-    // Initialize
+    // Initialize application layout state
     renderTable(); 
 
 </script>
