@@ -92,11 +92,11 @@
 <div class="container">
     <div class="header-wrap">
         <h1>Commission Audit Tool <span class="version-badge">v1.23 Stable</span></h1>
-        <button class="print-btn no-print" onclick="window.print()">ðŸ–¨ï¸ Print / Save PDF</button>
+        <button class="print-btn no-print" onclick="window.print()">🖨️ Print / Save PDF</button>
     </div>
 
     <div class="pdf-upload-section no-print">
-        <label for="pdfUpload">ðŸ“„ Auto-Fill from Statement PDF:</label>
+        <label for="pdfUpload">📄 Auto-Fill from Statement PDF:</label>
         <input type="file" id="pdfUpload" accept="application/pdf">
         <span id="pdfStatus" style="font-size: 12px; color: #555;"></span>
     </div>
@@ -209,7 +209,7 @@
                     <option value="target">Target (ZAR)</option>
                 </select>
             </div>
-            <button type="button" class="print-btn" id="addSapBtn" style="background-color: #d35400;">âž• Add Field Override</button>
+            <button type="button" class="print-btn" id="addSapBtn" style="background-color: #d35400;">➕ Add Field Override</button>
         </div>
         <div id="sapOverridesContainer" style="display: flex; flex-direction: column; margin-bottom: 20px;"></div>
     </div>
@@ -500,7 +500,7 @@
                 div.innerHTML = `
                     <strong style="width: 250px; color: #d35400;">${stream} (${metric.charAt(0).toUpperCase() + metric.slice(1)})</strong>
                     <input type="number" value="${val}" onchange="updateSapValue('${stream}', '${metric}', this.value)">
-                    <button type="button" onclick="removeSapOverride('${stream}', '${metric}')">âœ– Remove</button>
+                    <button type="button" onclick="removeSapOverride('${stream}', '${metric}')">✖ Remove</button>
                 `;
                 container.appendChild(div);
             }
@@ -656,7 +656,7 @@
         document.getElementById('resBonus').innerText = stdPerfectBonus;
         document.getElementById('resFinalMult').innerText = stdFinalMult.toFixed(2);
         document.getElementById('resFinalComm').innerText = formatCurrency(finalCalc1);
-        document.getElementById('calcLogicText').innerText = stdYield >= 100 ? "Overall target met! Target Commission Ã— Multiple applied." : "Target not met. Segment Commission only.";
+        document.getElementById('calcLogicText').innerText = stdYield >= 100 ? "Overall target met! Target Commission × Multiple applied." : "Target not met. Segment Commission only.";
 
         document.getElementById('resMidTotalTarget').innerText = formatCurrency(stdTotalTarget);
         document.getElementById('resMidTotalActual').innerText = formatCurrency(stdTotalActual);
@@ -665,7 +665,7 @@
         document.getElementById('resMidBonus').innerText = stdPerfectBonus;
         document.getElementById('resMidFinalMult').innerText = stdFinalMult.toFixed(2);
         document.getElementById('resMidFinalComm').innerText = formatCurrency(finalCalc2);
-        document.getElementById('calcMidLogicText').innerText = stdYield >= 100 ? "Overall target met! Midpoint Commission Ã— Multiple applied." : "Target not met. Midpoint Segment Commission only.";
+        document.getElementById('calcMidLogicText').innerText = stdYield >= 100 ? "Overall target met! Midpoint Commission × Multiple applied." : "Target not met. Midpoint Segment Commission only.";
 
         document.getElementById('resSapTotalTarget').innerText = formatCurrency(sapTotalTarget);
         document.getElementById('resSapTotalActual').innerText = formatCurrency(sapTotalActual);
@@ -674,7 +674,7 @@
         document.getElementById('resSapBonus').innerText = sapPerfectBonus;
         document.getElementById('resSapFinalMult').innerText = sapFinalMult.toFixed(2);
         document.getElementById('resSapFinalComm').innerText = formatCurrency(finalCalc3);
-        document.getElementById('calcSapLogicText').innerText = sapYield >= 100 ? "Overall SAP target met! Midpoint Commission Ã— SAP Multiple applied." : "SAP Target not met. Midpoint Segment Commission only.";
+        document.getElementById('calcSapLogicText').innerText = sapYield >= 100 ? "Overall SAP target met! Midpoint Commission × SAP Multiple applied." : "SAP Target not met. Midpoint Segment Commission only.";
 
         const trueCommission = hasSAP ? finalCalc3 : finalCalc2;
         const diff = trueCommission - finalCalc1;
@@ -696,7 +696,7 @@
 
         if(hasSAP) document.getElementById('resDiffText').style.display = "none";
 
-        let rHTML = '<h3>ðŸ“ Detailed Calculation Report</h3>';
+        let rHTML = '<h3>📝 Detailed Calculation Report</h3>';
         
         rHTML += '<h4>Step 1: Calculate Overall Yield</h4>' +
                  '<p>The system sums all active targets and actuals to determine the overall yield percentage.</p>' +
@@ -752,7 +752,7 @@
             tr.innerHTML = '<td><strong>' + stream + '</strong></td>' +
                            '<td>' + (weight * 100).toFixed(1) + '%</td>' +
                            '<td><input type="number" class="target-input" placeholder="0" value="' + tVal + '"></td>' +
-                           '<td class="no-print" style="text-align: center;"><button type="button" class="swap-btn" title="Swap Target & Actual">â‡„</button></td>' +
+                           '<td class="no-print" style="text-align: center;"><button type="button" class="swap-btn" title="Swap Target & Actual">⇄</button></td>' +
                            '<td><input type="number" class="actual-input" placeholder="0" value="' + aVal + '"></td>' +
                            '<td class="percent-cell">0.00%</td>' +
                            '<td><span class="badge fail">Missed</span></td>';
